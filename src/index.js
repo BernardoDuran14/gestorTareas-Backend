@@ -16,6 +16,7 @@ app.use(express.json()); // express que use json
 // Endpoints
 app.use(require("./routes/index.js"));
 app.use(require("./routes/auth.js"));
+app.use(require("./routes/tasks.js"));
 
 // Server
 app.listen(app.get("port"), () => {
