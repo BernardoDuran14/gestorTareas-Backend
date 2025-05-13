@@ -1,79 +1,148 @@
 const { Router } = require('express');
 const Tasks = require('../models/Tasks.js');
+const verifyToken = require("../middlewares/auth");
 
 const router = Router();
 // GET ALL TASKS
-router.get("/api/tasks", async (req, res) => {
-    const tasks = await Tasks.find();
+router.get("/api/tasks", verifyToken, async (req, res) => {
+    const tasks = await Tasks.find({ userId: req.userId });
     res.json(tasks);
 });
 
-// GET TASK BY ID
-router.get('/api/tasks/:id', async (req, res) => {
-    const {id} = req.params;
+// GET TASK BY TITLE WITH VERIFY TOKEN
+router.get("/api/tasks/title/:search", verifyToken, async (req, res) => {
+    const { search } = req.params;
+
+    try {
+        const tasks = await Tasks.find({
+            userId: req.userId,
+            title: { $regex: new RegExp(search, "i") } // insensible a mayúsculas
+        });
+
+        res.json(tasks);
+    } catch (error) {
+        res.status(500).json({ message: "Error al buscar por título", error });
+    }
+});
+
+// GET TASK BY STATUS WITH VERIFY TOKEN
+router.get("/api/tasks/status/:status", verifyToken, async (req, res) => {
+    const { status } = req.params;
+
+    try {
+        const tasks = await Tasks.find({
+            userId: req.userId,
+            status: status
+        });
+
+        res.json(tasks);
+    } catch (error) {
+        res.status(500).json({ message: "Error al filtrar por estado", error });
+    }
+});
+
+// GET TASK BY DEADLINE WITH VERIFY TOKEN
+router.get("/api/tasks/deadline", verifyToken, async (req, res) => {
+    const { before, after } = req.query;
+    const filter = { userId: req.userId };
+
+    if (before || after) {
+        filter.deadline = {};
+        if (before) filter.deadline.$lte = new Date(before);
+        if (after) filter.deadline.$gte = new Date(after);
+    }
+
+    try {
+        const tasks = await Tasks.find(filter);
+        res.json(tasks);
+    } catch (error) {
+        res.status(500).json({ message: "Error al filtrar por fechas", error });
+    }
+});
+
+// GET TASK BY ID WITH VERIFY TOKEN
+router.get('/api/tasks/:id', verifyToken, async (req, res) => {
+    const { id } = req.params;
     const task = await Tasks.findById(id);
-    try{
-        if(!task) return res.status(404).json({message: "Task not found"});
-        res.json(task);
-    } catch (error) {
-        return res.status(500).json({message: error.message});
-    }
-});
-
-// GET TASK BY TITLE
-router.get('/api/tasks/title/:title', async (req, res) => {
-    const {title} = req.params;
     try {
-        const task = await Tasks.find({ title: { $regex: title, $options: 'i' } });
+        if (!task) return res.status(404).json({ message: "Task not found" });
         res.json(task);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        return res.status(500).json({ message: error.message });
     }
 });
 
-// GET TASK BY DEADLINE
-router.get('/api/tasks/deadline/:deadline', async (req, res) => {
-    const { deadline } = req.params;
+// CREATE TASK WITH VERIFY TOKEN
+router.post("/api/tasks", verifyToken, async (req, res) => {
+    const { title, description, deadline } = req.body;
+
     try {
-        const task = await Tasks.find({ deadline: { $regex: deadline, $options: 'i' } });
-        res.json(task);
+        const newTask = new Tasks({
+            title,
+            description,
+            deadline,
+            userId: req.userId // <-- aquí enlazas con el usuario logueado
+        });
+
+        await newTask.save();
+        res.status(201).json({ message: "Tarea creada", task: newTask });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({ message: "Error al crear tarea", error });
     }
 });
 
-// CREATE TASK
-router.post('/api/tasks', async (req, res) => {
-    const { title, description, status, deadline } = req.body;
-    const newTasks = await Tasks({
-        title: title,
-        description: description,
-        status: status,
-        deadline: deadline
-    });
-    newTasks.save();
-    res.json({msg: "Task created", newTasks});
+
+// UPDATE TASK WITH VERIFY TOKEN
+router.put("/api/tasks/:id", verifyToken, async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const allowedTransitions = {
+        pendiente: "en progreso",
+        "en progreso": "completada"
+    };
+
+    try {
+        const task = await Tasks.findOne({ _id: id, userId: req.userId });
+        if (!task) return res.status(404).json({ message: "Tarea no encontrada" });
+
+        const currentStatus = task.status;
+
+        // Validar transición válida
+        if (allowedTransitions[currentStatus] !== status) {
+            return res.status(400).json({
+                message: `No se puede cambiar de estado de ${currentStatus} a ${status}`
+            });
+        }
+
+        task.status = status;
+        await task.save();
+
+        res.json({ message: "Estado actualizado", task });
+    } catch (error) {
+        res.status(500).json({ message: "Error al actualizar tarea", error });
+    }
 });
 
-// UPDATE TASK
-router.put('/api/tasks/:id', async (req, res) => {
+
+// DELETE TASK WITH VERIFY TOKEN
+router.delete("/api/tasks/:id", verifyToken, async (req, res) => {
     const { id } = req.params;
-    const { title, description, status, deadline } = req.body;
-    const task = await Tasks.findByIdAndUpdate(id, {
-        title: title,
-        description: description,
-        status: status,
-        deadline: deadline
-    }, { new: true });
-    res.json({ msg: "Task updated", task });
+
+    try {
+        const task = await Tasks.findOne({ _id: id, userId: req.userId });
+        if (!task) return res.status(404).json({ message: "Tarea no encontrada" });
+
+        if (task.status !== "completada") {
+            return res.status(400).json({ message: "Solo puedes eliminar tareas completadas" });
+        }
+
+        await task.deleteOne();
+        res.json({ message: "Tarea eliminada" });
+    } catch (error) {
+        res.status(500).json({ message: "Error al eliminar tarea", error });
+    }
 });
 
-// DELETE TASK
-router.delete('/api/tasks/:id', async (req, res) => {
-    const { id } = req.params;
-    const task = await Tasks.findByIdAndDelete(id);
-    if (!task) return res.status(404).json({ message: "Task not found" });
-    res.json({ msg: "Task deleted", task });
-});
 
 module.exports = router;
