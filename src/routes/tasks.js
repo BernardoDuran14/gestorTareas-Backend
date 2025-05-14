@@ -5,9 +5,29 @@ const verifyToken = require("../middlewares/auth");
 const router = Router();
 // GET ALL TASKS
 router.get("/api/tasks", verifyToken, async (req, res) => {
-    const tasks = await Tasks.find({ userId: req.userId });
-    res.json(tasks);
+    const { status, before, search } = req.query;
+    const filter = { userId: req.userId };
+
+    if (status) {
+        filter.status = status;
+    }
+
+    if (search) {
+        filter.title = { $regex: new RegExp(search, "i") };
+    }
+
+    if (before) {
+        filter.deadline = { $lte: new Date(before) };
+    }
+
+    try {
+        const tasks = await Tasks.find(filter);
+        res.json(tasks);
+    } catch (error) {
+        res.status(500).json({ message: "Error al filtrar tareas", error });
+    }
 });
+
 
 // GET TASK BY TITLE WITH VERIFY TOKEN
 router.get("/api/tasks/title/:search", verifyToken, async (req, res) => {

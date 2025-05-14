@@ -43,20 +43,32 @@ function verifyToken(req, res, next){
 }
 
 router.post("/api/auth/register", async (req, res) => {
+    console.log("BODY RECIBIDO:", req.body); // 👈 Diagnóstico
+
     const { name, email, password } = req.body;
 
-    const userFound = await User.findOne({ email });
-    if (userFound) return res.status(400).json({ message: "Email ya registrado" });
+    try {
+        if (!name || !email || !password) {
+            return res.status(400).json({ message: "Faltan campos obligatorios" });
+        }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({
-        name,
-        email,
-        password: hashedPassword
-    });
+        const userExists = await User.findOne({ email });
+        if (userExists) {
+            return res.status(400).json({ message: "El correo ya está registrado" });
+        }
 
-    await newUser.save();
-    res.json({ message: "Usuario registrado" });
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = new User({ name, email, password: hashedPassword });
+        await newUser.save();
+
+        return res.status(201).json({ message: "Usuario registrado correctamente" });
+    } catch (error) {
+        console.error("ERROR REGISTRO:", error);
+        return res.status(500).json({ message: "Error en el servidor al registrar usuario" });
+    }
 });
+
+
+
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const express = require('express');
 const morgan = require('morgan');
+const cors = require('cors');
 
 const app = express();
 // DB
@@ -7,10 +8,11 @@ require("dotenv").config();
 require("./database.js");
 
 // Global
-app.set("port", process.env.PORT || 3000);
+app.set("port", process.env.PORT || 3100);
 
 // configuraciones
 app.use(morgan("dev"));
+app.use(cors());
 app.use(express.json()); // express que use json
 
 // Endpoints
