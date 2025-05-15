@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const Tasks = require('../models/Tasks.js');
 const verifyToken = require("../middlewares/auth");
+const { body, validationResult } = require("express-validator");
 
 const router = Router();
 // GET ALL TASKS
@@ -93,56 +94,80 @@ router.get('/api/tasks/:id', verifyToken, async (req, res) => {
 });
 
 // CREATE TASK WITH VERIFY TOKEN
-router.post("/api/tasks", verifyToken, async (req, res) => {
-    const { title, description, deadline } = req.body;
+router.post("/api/tasks",
+    verifyToken,
+    [
+        body("title", "El título es obligatorio").notEmpty(),
+        body("deadline", "Formato de fecha no válido")
+            .optional()
+            .isISO8601()
+            .toDate(),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
 
-    try {
-        const newTask = new Tasks({
-            title,
-            description,
-            deadline,
-            userId: req.userId // <-- aquí enlazas con el usuario logueado
-        });
+        const { title, description, deadline } = req.body;
 
-        await newTask.save();
-        res.status(201).json({ message: "Tarea creada", task: newTask });
-    } catch (error) {
-        res.status(500).json({ message: "Error al crear tarea", error });
+        try {
+            const newTask = new Tasks({
+                title,
+                description,
+                deadline,
+                userId: req.userId,
+            });
+
+            await newTask.save();
+            res.status(201).json({ message: "Tarea creada", task: newTask });
+        } catch (error) {
+            res.status(500).json({ message: "Error al crear tarea", error });
+        }
     }
-});
+);
 
 
 // UPDATE TASK WITH VERIFY TOKEN
+// UPDATE TASK (status o campos editables)
 router.put("/api/tasks/:id", verifyToken, async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
-
-    const allowedTransitions = {
-        pendiente: "en progreso",
-        "en progreso": "completada"
-    };
+    const { status, title, description, deadline } = req.body;
 
     try {
         const task = await Tasks.findOne({ _id: id, userId: req.userId });
         if (!task) return res.status(404).json({ message: "Tarea no encontrada" });
 
-        const currentStatus = task.status;
+        // Si se quiere cambiar el estado, validar transición
+        if (status && status !== task.status) {
+            const allowedTransitions = {
+                pendiente: "en progreso",
+                "en progreso": "completada",
+            };
+            const currentStatus = task.status;
 
-        // Validar transición válida
-        if (allowedTransitions[currentStatus] !== status) {
-            return res.status(400).json({
-                message: `No se puede cambiar de estado de ${currentStatus} a ${status}`
-            });
+            if (allowedTransitions[currentStatus] !== status) {
+                return res.status(400).json({
+                    message: `No se puede cambiar de estado de ${currentStatus} a ${status}`,
+                });
+            }
+
+            task.status = status;
         }
 
-        task.status = status;
+        // Actualizar otros campos si vienen
+        if (title) task.title = title;
+        if (description !== undefined) task.description = description;
+        if (deadline !== undefined) task.deadline = deadline;
+
         await task.save();
 
-        res.json({ message: "Estado actualizado", task });
+        res.json({ message: "Tarea actualizada", task });
     } catch (error) {
         res.status(500).json({ message: "Error al actualizar tarea", error });
     }
 });
+
 
 
 // DELETE TASK WITH VERIFY TOKEN

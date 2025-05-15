@@ -1,6 +1,7 @@
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 // DB
@@ -14,6 +15,7 @@ app.set("port", process.env.PORT || 3100);
 app.use(morgan("dev"));
 app.use(cors());
 app.use(express.json()); // express que use json
+app.use(authRoutes);
 
 // Endpoints
 app.use(require("./routes/index.js"));

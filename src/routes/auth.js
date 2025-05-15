@@ -1,21 +1,42 @@
 const {Router} = require("express");
+const { body, validationResult } = require("express-validator");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const User = require("../models/User.js");
 const router = Router();
 
 const secretKey = process.env.SECRET_KEY || "secret";
-router.post("/api/auth/login", async (req, res) => {
-    const { email, password } = req.body;
-    const userFound = await User.findOne({ email });
-    if (!userFound) return res.status(400).json({ message: "Usuario no encontrado" });
+router.post("/api/auth/login",
+    [
+        body("email", "Email inválido").isEmail(),
+        body("password", "La contraseña es obligatoria").notEmpty(),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
 
-    const match = await bcrypt.compare(password, userFound.password);
-    if (!match) return res.status(401).json({ message: "Contraseña incorrecta" });
+        const { email, password } = req.body;
 
-    const token = jwt.sign({ id: userFound._id }, secretKey, { expiresIn: "1h" });
-    res.json({ token });
-});
+        try {
+            const user = await User.findOne({ email });
+            if (!user) return res.status(400).json({ message: "Credenciales incorrectas" });
+
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) return res.status(400).json({ message: "Credenciales incorrectas" });
+
+            const token = jwt.sign({ id: user._id }, process.env.SECRET_KEY, {
+                expiresIn: "1d",
+            });
+
+            res.json({ token });
+        } catch (err) {
+            res.status(500).json({ message: "Error en el servidor" });
+        }
+    }
+);
+
 
 
 router.post("/api/users", verifyToken, ( req, res) => {
@@ -31,40 +52,66 @@ router.post("/api/users", verifyToken, ( req, res) => {
     });
 });
 
-function verifyToken(req, res, next){
+function verifyToken(req, res, next) {
     const header = req.headers["authorization"];
-    if(header !== undefined) {
+    if (header !== undefined) {
         const token = header.split(" ")[1];
-        req.token = token;
-        next();
-    } else{
-        res.sendStatus(403)
+        jwt.verify(token, secretKey, (error, decoded) => {
+            if (error) {
+                return res.sendStatus(403);
+            }
+            req.userId = decoded.id;
+            next();
+        });
+    } else {
+        res.sendStatus(403);
     }
 }
 
-router.post("/api/auth/register", async (req, res) => {
-    console.log("BODY RECIBIDO:", req.body); // 👈 Diagnóstico
 
-    const { name, email, password } = req.body;
+router.post("/api/auth/register",
+    [
+        body("name", "El nombre es obligatorio").notEmpty(),
+        body("email", "Email inválido").isEmail(),
+        body("password", "La contraseña debe tener al menos 6 caracteres").isLength({ min: 6 }),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
 
+        const { name, email, password } = req.body;
+
+        try {
+            const existingUser = await User.findOne({ email });
+            if (existingUser) {
+                return res.status(400).json({ message: "El usuario ya existe" });
+            }
+
+            const hashedPassword = await bcrypt.hash(password, 10);
+            const newUser = new User({ name, email, password: hashedPassword });
+
+            await newUser.save();
+
+            const token = jwt.sign({ id: newUser._id }, process.env.SECRET_KEY, {
+                expiresIn: "1d",
+            });
+
+            res.json({ token });
+        } catch (err) {
+            res.status(500).json({ message: "Error en el servidor" });
+        }
+    }
+);
+
+router.get('/api/auth/me', verifyToken, async (req, res) => {
     try {
-        if (!name || !email || !password) {
-            return res.status(400).json({ message: "Faltan campos obligatorios" });
-        }
-
-        const userExists = await User.findOne({ email });
-        if (userExists) {
-            return res.status(400).json({ message: "El correo ya está registrado" });
-        }
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = new User({ name, email, password: hashedPassword });
-        await newUser.save();
-
-        return res.status(201).json({ message: "Usuario registrado correctamente" });
+        const user = await User.findById(req.userId).select('-password');
+        if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+        res.json(user);
     } catch (error) {
-        console.error("ERROR REGISTRO:", error);
-        return res.status(500).json({ message: "Error en el servidor al registrar usuario" });
+        res.status(500).json({ message: 'Error al obtener usuario', error });
     }
 });
 
