@@ -88,5 +88,5 @@ Insomnia
 
 Para probar los endpoints usando tokens JWT.
 
-#👨‍💻 Autor
+## 👨‍💻 Autor
 Proyecto desarrollado por Bernardo Duran
