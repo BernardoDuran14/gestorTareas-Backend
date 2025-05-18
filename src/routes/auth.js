@@ -73,6 +73,7 @@ router.post("/api/users", verifyToken, ( req, res) => {
     });
 });
 
+
 function verifyToken(req, res, next) {
     const header = req.headers["authorization"];
     if (header !== undefined) {
