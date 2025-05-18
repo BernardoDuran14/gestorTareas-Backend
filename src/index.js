@@ -14,7 +14,7 @@ app.set("port", process.env.PORT || 3100);
 // configuraciones
 app.use(morgan("dev"));
 app.use(cors({
-   origin: "https://gestor-tareas-frontend.vercel.app", // tu dominio de Vercel
+   origin: "https://gestor-tareas-frontend-six.vercel.app", // tu dominio de Vercel
    credentials: true
 }));
 
