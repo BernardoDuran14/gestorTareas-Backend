@@ -6,7 +6,8 @@ const User = require("../models/User.js");
 const router = Router();
 
 const secretKey = process.env.SECRET_KEY || "secret";
-router.post("/api/auth/login",
+router.post(
+    "/api/auth/login",
     [
         body("email", "Email inválido").isEmail(),
         body("password", "La contraseña es obligatoria").notEmpty(),
@@ -14,24 +15,44 @@ router.post("/api/auth/login",
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
+            console.log("Errores de validación:", errors.array());
             return res.status(400).json({ errors: errors.array() });
         }
 
         const { email, password } = req.body;
 
         try {
+            console.log("🔐 Login solicitado para:", email);
+
             const user = await User.findOne({ email });
-            if (!user) return res.status(400).json({ message: "Credenciales incorrectas" });
+
+            if (!user) {
+                console.log("❌ Usuario no encontrado");
+                return res.status(400).json({ message: "Credenciales incorrectas" });
+            }
+
+            if (!user.password) {
+                console.log("❌ Usuario encontrado pero sin contraseña registrada");
+                return res.status(500).json({ message: "Contraseña no definida" });
+            }
+
+            console.log("🔐 Hash en BD:", user.password);
 
             const isMatch = await bcrypt.compare(password, user.password);
-            if (!isMatch) return res.status(400).json({ message: "Credenciales incorrectas" });
 
-            const token = jwt.sign({ id: user._id }, process.env.SECRET_KEY, {
+            if (!isMatch) {
+                console.log("❌ Contraseña incorrecta");
+                return res.status(400).json({ message: "Credenciales incorrectas" });
+            }
+
+            const token = jwt.sign({ id: user._id }, secretKey, {
                 expiresIn: "1d",
             });
 
+            console.log("✅ Login exitoso para:", email);
             res.json({ token });
         } catch (err) {
+            console.error("💥 Error interno en login:", err);
             res.status(500).json({ message: "Error en el servidor" });
         }
     }
@@ -69,7 +90,8 @@ function verifyToken(req, res, next) {
 }
 
 
-router.post("/api/auth/register",
+router.post(
+    "/api/auth/register",
     [
         body("name", "El nombre es obligatorio").notEmpty(),
         body("email", "Email inválido").isEmail(),
@@ -78,6 +100,7 @@ router.post("/api/auth/register",
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
+            console.log("Errores de validación en registro:", errors.array());
             return res.status(400).json({ errors: errors.array() });
         }
 
@@ -86,20 +109,29 @@ router.post("/api/auth/register",
         try {
             const existingUser = await User.findOne({ email });
             if (existingUser) {
+                console.log("Usuario ya existe:", email);
                 return res.status(400).json({ message: "El usuario ya existe" });
             }
 
+            // Hashear la contraseña antes de guardar
             const hashedPassword = await bcrypt.hash(password, 10);
-            const newUser = new User({ name, email, password: hashedPassword });
+
+            const newUser = new User({
+                name,
+                email,
+                password: hashedPassword,
+            });
 
             await newUser.save();
 
-            const token = jwt.sign({ id: newUser._id }, process.env.SECRET_KEY, {
+            const token = jwt.sign({ id: newUser._id }, secretKey, {
                 expiresIn: "1d",
             });
 
+            console.log("Usuario registrado correctamente:", email);
             res.json({ token });
         } catch (err) {
+            console.error("Error en registro:", err);
             res.status(500).json({ message: "Error en el servidor" });
         }
     }

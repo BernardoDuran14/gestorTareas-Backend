@@ -6,28 +6,32 @@ const { body, validationResult } = require("express-validator");
 const router = Router();
 // GET ALL TASKS
 router.get("/api/tasks", verifyToken, async (req, res) => {
-    const { status, before, search } = req.query;
-    const filter = { userId: req.userId };
+    const { status, search, before, after } = req.query;
+
+    const query = { userId: req.userId };
 
     if (status) {
-        filter.status = status;
+        query.status = status;
     }
 
     if (search) {
-        filter.title = { $regex: new RegExp(search, "i") };
+        query.title = { $regex: search, $options: "i" };
     }
 
-    if (before) {
-        filter.deadline = { $lte: new Date(before) };
+    if (before || after) {
+        query.deadline = {};
+        if (after) query.deadline.$gte = new Date(after);
+        if (before) query.deadline.$lte = new Date(before);
     }
 
     try {
-        const tasks = await Tasks.find(filter);
+        const tasks = await Tasks.find(query);
         res.json(tasks);
     } catch (error) {
         res.status(500).json({ message: "Error al filtrar tareas", error });
     }
 });
+
 
 
 // GET TASK BY TITLE WITH VERIFY TOKEN
